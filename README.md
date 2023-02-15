@@ -22,3 +22,5 @@ calculate_sec_param_GCD(data, I_gcd, Q_disc, Vmax, AL_mass, Area_two_elec): calc
 The headerline argument of the read_file_CV, read_file_GCD, and filtering_EIS functions may need to be changed depending on the file condition.
 Their default values are 52, 48, 58, respectively.
 If an error still occurs, also change the numbers of # at the headerline-# parts.
+
+Example results are shown in the CV-GCD-EIS combined.ipynb
