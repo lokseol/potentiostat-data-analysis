@@ -1,0 +1,125 @@
+import os
+import pandas as pd
+import matplotlib.pyplot as plt
+from IPython.display import display
+
+# this function imports a CV data file, clean it, and extracts scan rate and Vmax
+# head number can vary around 52. if error occrs, change the numbers of # at the headerline-# parts
+def read_file_CV(filename,headerline):
+    data = pd.read_csv(f"Input_data/{filename}", header=headerline, sep="\t", encoding = 'ISO-8859-1')
+    scan_rate = float(pd.read_csv(f"Input_data/{filename}", encoding = 'ISO-8859-1', skiprows=range(1, headerline-17), nrows=1)["EC-Lab ASCII FILE"].iloc[0][20:])
+    Vmax = float(pd.read_csv(f"Input_data/{filename}", encoding = 'ISO-8859-1', skiprows=range(1, headerline-15), nrows=1)["EC-Lab ASCII FILE"].iloc[0][20:])
+    cycle = float(pd.read_csv(f"Input_data/{filename}", encoding = 'ISO-8859-1', skiprows=range(1, headerline-2), nrows=1)["EC-Lab ASCII FILE"].iloc[0][20:])
+    data = data[data["cycle number"] == cycle][["Ewe/V", "<I>/mA"]].assign(filename=filename)
+    return data, scan_rate, Vmax
+
+# this function calculates secondary parameters from a CV curve
+def calculate_sec_param_CV(data, scan_rate, Vmax, AL_mass, Area_two_elec):
+    data["delta_x"] = data["Ewe/V"].diff()
+    data["segment_area"] = data["delta_x"] * data["<I>/mA"]
+    VI_area = data["segment_area"].sum()
+    C_abs = round(4 * 0.5 * VI_area / scan_rate / Vmax, 3)
+    C_sp = round(C_abs / AL_mass, 3)
+    C_areal = round(C_abs / Area_two_elec, 3)
+    E_abs = round(0.5 * C_abs * Vmax * Vmax / 3.6, 4)
+    E_sp = round(E_abs / AL_mass, 3)
+    E_areal = round(E_abs / Area_two_elec, 4)
+    t_disc = Vmax / scan_rate * 1000
+    P_abs = round(E_abs * 3600 / t_disc , 3)
+    P_sp = round(P_abs / AL_mass, 3)
+    P_areal = round (P_abs / Area_two_elec, 3)
+    return {"Scan rate":scan_rate, "Vmax":Vmax, "C_abs":C_abs, "C_sp":C_sp, "C_areal":C_areal, "E_abs":E_abs, "E_sp":E_sp, "E_areal":E_areal, "P_abs":P_abs, "P_sp":P_sp, "P_areal":P_areal}
+
+# this function imports a GCD data file, cleans it, and extracts primary parameters
+# head number can vary around 48. if error occrs, change the numbers of # at the headerline-# parts
+def read_file_GCD(filename,headerline):
+    data = pd.read_csv(f"Input_data/{filename}", header=headerline, sep="\t", encoding='ISO-8859-1')
+    I_gcd = float(pd.read_csv(f"input_data/{filename}", encoding = 'ISO-8859-1', skiprows=range(1, headerline-14), nrows=1)["EC-Lab ASCII FILE"].iloc[0][20:25])
+    Vmax = float(pd.read_csv(f"input_data/{filename}", encoding = 'ISO-8859-1', skiprows=range(1, headerline-10), nrows=1)["EC-Lab ASCII FILE"].iloc[0][20:25])
+    cycle = float(pd.read_csv(f"input_data/{filename}", encoding = 'ISO-8859-1', skiprows=range(1, headerline+1), nrows=1)["EC-Lab ASCII FILE"].iloc[0][40:])
+    Q_disc = data[data["cycle number"] == cycle]['dQ/C'].min()
+    time_min = data[data["cycle number"] == cycle]['time/s'].min()
+    data = data[data["cycle number"] == cycle][["time/s", "Ewe/V"]].assign(filename=filename)
+    data['time/s'] = data['time/s'] - time_min
+    return data, I_gcd, Vmax, Q_disc, time_min
+
+# this function calculates secondary parameters from a GCD curve
+def calculate_sec_param_GCD(data, I_gcd, Q_disc, Vmax, AL_mass, Area_two_elec):
+    C_abs = round(4 * -Q_disc / Vmax, 2)
+    C_sp = round(C_abs / AL_mass, 3)
+    C_areal = round(C_abs / Area_two_elec, 3)
+    E_abs = round(0.5 * C_abs * Vmax * Vmax / 3.6, 4)
+    E_sp = round(E_abs / AL_mass, 3)
+    E_areal = round(E_abs / Area_two_elec, 4)
+    t_disc = data['time/s'].max()
+    P_abs = round(E_abs * 3600 / t_disc , 3)
+    P_sp = round(P_abs / AL_mass, 3)
+    P_areal = round (P_abs / Area_two_elec, 3)
+    return {"I_gcd":I_gcd, "Vmax":Vmax, "C_abs":C_abs, "C_sp":C_sp, "C_areal":C_areal, "E_abs":E_abs, "E_sp":E_sp, "E_areal":E_areal, "P_abs":P_abs, "P_sp":P_sp, "P_areal":P_areal}
+
+# this function makes an EIS plot cleaner
+def filtering_EIS(data,headerline):
+    data = pd.read_csv(f"Input_data/{filename}", header = headerline, sep = '\t', encoding = 'ISO-8859-1')
+#     data = data[data['-Im(Z)/Ohm'] > 0]
+#     data = data[data['Re(Z)/Ohm'] > 0]
+#     data = data[data['Re(Z)/Ohm'] < 60]
+    data = data[['freq/Hz', 'Re(Z)/Ohm', '-Im(Z)/Ohm']]
+    return data
+
+
+
+
+# place all input data (.mpt files) in the Input_data folder beforehand
+data_files = os.listdir(r'C:\\Users\\Myeong-Lok Seol\\Python_code\\potentiostat-data-analysis\\Input_data')
+
+# mass was measured after the annealing, and then the AC portion was calculated 
+AL_mass = 0.00683 * 0.77   # [g]
+Area_two_elec = 2.58       # [cm^2]
+
+# define empty dataframes
+sec_parameters_CV = []
+sec_parameters_GCD = []
+sec_parameters_EIS = []
+
+# generating  plot data and secondary dataset
+for filename in data_files:
+    if filename.endswith("_CV.mpt"):
+        data_CV, scan_rate, Vmax_CV = read_file_CV(filename,52)   # if error occurs, change the number 52
+        sec_parameters_seg = calculate_sec_param_CV(data_CV, scan_rate, Vmax_CV, AL_mass, Area_two_elec)
+        sec_parameters_CV.append(sec_parameters_seg)
+        plt.plot(data_CV["Ewe/V"], data_CV["<I>/mA"], label = 'CV')
+        plt.xlabel("Voltage [V]")
+        plt.ylabel("Current [mA]")
+
+plt.show()
+sec_parameters_CV = pd.DataFrame(sec_parameters_CV)
+sec_parameters_CV = sec_parameters_CV.sort_values(by=['Scan rate', 'Vmax'], ascending = True)
+display(sec_parameters_CV)
+
+for filename in data_files:
+    if filename.endswith("_CP.mpt"):
+        data_GCD, I_gcd, Vmax, Q_disc, time_min = read_file_GCD(filename,48)   # if error occurs, change the number 48
+        sec_parameters_seg = calculate_sec_param_GCD(data_GCD, I_gcd, Q_disc, Vmax, AL_mass, Area_two_elec)
+        sec_parameters_GCD.append(sec_parameters_seg)
+        plt.plot(data_GCD["time/s"], data_GCD["Ewe/V"], label = 'GCD')
+        plt.xlabel("time [s]")
+        plt.ylabel("Voltage [V]")
+
+plt.show()
+sec_parameters_GCD = pd.DataFrame(sec_parameters_GCD)
+sec_parameters_GCD = sec_parameters_GCD.sort_values(by=['I_gcd', 'Vmax'], ascending = True)
+display(sec_parameters_GCD)
+
+for filename in data_files:
+    if filename.endswith("_PEIS.mpt"):
+        data_EIS = filtering_EIS(filename,58)  # if error occurs, change the number 58
+        data_EIS = data_EIS.iloc[10:]  # change the number 7 depending on the number of trash rows
+        plt.plot(data_EIS['Re(Z)/Ohm'], data_EIS['-Im(Z)/Ohm'])
+        plt.xlabel('Z_RE [Ohm]')
+        plt.ylabel('-Z_IM [Ohm]')
+
+plt.show()
+
+# data_CV.to_csv('CV_filtered.csv', index = False, header = False)
+# data_GCD.to_csv('GCD_filtered.csv', index = False, header = False)
+# data_EIS.to_csv('EIS_filtered.csv', index = False, header = False)
